@@ -1,0 +1,1558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SIC/XE Assembler</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Syne:wght@400;700;800&display=swap" rel="stylesheet" />
+<style>
+  /* ── Reset & Base ── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0a0c10;
+    --surface:   #111318;
+    --surface2:  #181b22;
+    --border:    #252933;
+    --accent:    #00e5ff;
+    --accent2:   #ff6b35;
+    --green:     #39ff82;
+    --red:       #ff3b5c;
+    --yellow:    #ffd166;
+    --purple:    #c77dff;
+    --text:      #c8d0e0;
+    --muted:     #4a5266;
+    --mono:      'Share Tech Mono', monospace;
+    --sans:      'Syne', sans-serif;
+  }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    overflow: hidden;
+  }
+
+  /* ── Scanline overlay ── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.07) 2px,
+      rgba(0,0,0,0.07) 4px
+    );
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  /* ── Layout ── */
+  .shell {
+    display: grid;
+    grid-template-rows: 64px 1fr;
+    height: 100vh;
+  }
+
+  /* ── Header ── */
+  header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 0 28px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    position: relative;
+    z-index: 10;
+  }
+
+  .logo-chip {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .logo-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 10px var(--accent);
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  .logo-text {
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    color: #fff;
+    text-transform: uppercase;
+  }
+
+  .logo-text span { color: var(--accent); }
+
+  header .subtitle {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    margin-left: 4px;
+  }
+
+  .status-badge {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    background: var(--bg);
+    transition: all 0.3s;
+  }
+
+  .status-badge.ok    { border-color: var(--green); color: var(--green); background: rgba(57,255,130,0.07); }
+  .status-badge.error { border-color: var(--red);   color: var(--red);   background: rgba(255,59,92,0.07);  }
+  .status-badge.busy  { border-color: var(--accent); color: var(--accent); background: rgba(0,229,255,0.07); }
+
+  /* ── Main area ── */
+  .main {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    overflow: hidden;
+  }
+
+  /* ── Left panel ── */
+  .left-panel {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    overflow-y: auto;
+  }
+
+  .panel-section {
+    padding: 20px 20px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .panel-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 14px;
+  }
+
+  /* ── Drop zone ── */
+  .dropzone {
+    border: 1.5px dashed var(--border);
+    border-radius: 8px;
+    padding: 28px 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.25s;
+    position: relative;
+    background: var(--bg);
+  }
+
+  .dropzone:hover, .dropzone.drag-over {
+    border-color: var(--accent);
+    background: rgba(0,229,255,0.04);
+  }
+
+  .dropzone input[type=file] {
+    position: absolute; inset: 0;
+    opacity: 0; cursor: pointer; width: 100%; height: 100%;
+  }
+
+  .dz-icon {
+    font-size: 28px;
+    margin-bottom: 8px;
+    display: block;
+  }
+
+  .dz-text {
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+
+  .dz-text strong { color: var(--accent); font-weight: 400; }
+
+  .file-chosen {
+    margin-top: 10px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--green);
+    word-break: break-all;
+    display: none;
+  }
+
+  /* ── Assemble button ── */
+  .btn-assemble {
+    width: 100%;
+    margin-top: 14px;
+    padding: 12px;
+    background: var(--accent);
+    color: var(--bg);
+    font-family: var(--sans);
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn-assemble:hover:not(:disabled) {
+    background: #33eeff;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(0,229,255,0.3);
+  }
+
+  .btn-assemble:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  .btn-assemble .spinner {
+    display: none;
+    width: 14px; height: 14px;
+    border: 2px solid rgba(0,0,0,0.3);
+    border-top-color: var(--bg);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    margin: 0 auto;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Tab nav ── */
+  .tab-nav {
+    padding: 12px 12px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    overflow-y: auto;
+  }
+
+  .tab-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 12px;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.18s;
+    text-align: left;
+    width: 100%;
+    position: relative;
+  }
+
+  .tab-btn:hover {
+    background: var(--surface2);
+    color: var(--text);
+  }
+
+  .tab-btn.active {
+    background: rgba(0,229,255,0.1);
+    color: var(--accent);
+  }
+
+  /* Memory tab special active color */
+  .tab-btn.mem-tab.active {
+    background: rgba(199,125,255,0.1);
+    color: var(--purple);
+  }
+
+  .tab-btn .tab-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--border);
+    flex-shrink: 0;
+    transition: background 0.2s;
+  }
+
+  .tab-btn.active   .tab-dot { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+  .tab-btn.mem-tab.active .tab-dot { background: var(--purple); box-shadow: 0 0 6px var(--purple); }
+  .tab-btn.has-data .tab-dot { background: var(--green); }
+  .tab-btn.has-error .tab-dot { background: var(--red); box-shadow: 0 0 6px var(--red); }
+  .tab-btn.mem-loaded .tab-dot { background: var(--purple); box-shadow: 0 0 6px var(--purple); }
+
+  .tab-count {
+    margin-left: auto;
+    font-size: 10px;
+    background: var(--border);
+    color: var(--muted);
+    padding: 1px 6px;
+    border-radius: 10px;
+    display: none;
+  }
+
+  .tab-btn.has-data .tab-count  { display: inline; }
+
+  /* ── Right panel — viewer ── */
+  .viewer {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bg);
+  }
+
+  .viewer-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+
+  .viewer-title {
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #fff;
+  }
+
+  .viewer-lines {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    margin-left: auto;
+  }
+
+  .btn-copy {
+    padding: 5px 14px;
+    font-family: var(--mono);
+    font-size: 11px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .btn-copy:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Memory-themed header action btn */
+  .btn-mem-action {
+    padding: 5px 14px;
+    font-family: var(--mono);
+    font-size: 11px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: none;
+  }
+  .btn-mem-action:hover { border-color: var(--purple); color: var(--purple); }
+
+  .viewer-body {
+    flex: 1;
+    overflow: auto;
+    padding: 20px 24px;
+  }
+
+  /* ── Code display ── */
+  .code-block {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.75;
+    color: var(--text);
+    white-space: pre;
+    tab-size: 4;
+  }
+
+  .code-block .line {
+    display: flex;
+    gap: 0;
+  }
+
+  .code-block .ln {
+    color: var(--muted);
+    min-width: 42px;
+    user-select: none;
+    padding-right: 16px;
+    text-align: right;
+    flex-shrink: 0;
+    border-right: 1px solid var(--border);
+    margin-right: 16px;
+  }
+
+  .code-block .lc { flex: 1; }
+
+  /* Error file highlighting */
+  .code-block.is-error .lc { color: var(--red); }
+
+  /* ── Empty / welcome state ── */
+  .welcome {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 12px;
+    color: var(--muted);
+    text-align: center;
+    padding: 40px;
+  }
+
+  .welcome-icon {
+    font-size: 48px;
+    opacity: 0.3;
+    margin-bottom: 8px;
+  }
+
+  .welcome h2 {
+    font-size: 16px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text);
+    opacity: 0.4;
+  }
+
+  .welcome p {
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.8;
+    max-width: 340px;
+  }
+
+  /* ── Grid lines BG ── */
+  .viewer-body {
+    background-image:
+      linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+  /* ── Animations ── */
+  @keyframes fadeSlideIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .code-block { animation: fadeSlideIn 0.25s ease; }
+
+  /* ════════════════════════════════════════════════════
+     MEMORY VISUALIZATION
+  ════════════════════════════════════════════════════ */
+
+  .mem-view {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    gap: 0;
+    animation: fadeSlideIn 0.25s ease;
+  }
+
+  /* ── Memory toolbar ── */
+  .mem-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 0 16px;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+  }
+
+  .mem-toolbar-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    color: var(--muted);
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .mem-goto-input {
+    font-family: var(--mono);
+    font-size: 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--accent);
+    padding: 5px 10px;
+    border-radius: 4px;
+    width: 110px;
+    outline: none;
+    letter-spacing: 0.08em;
+    transition: border-color 0.2s;
+  }
+  .mem-goto-input:focus { border-color: var(--purple); }
+  .mem-goto-input::placeholder { color: var(--muted); }
+
+  .mem-btn {
+    padding: 5px 14px;
+    font-family: var(--mono);
+    font-size: 11px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.18s;
+    white-space: nowrap;
+  }
+  .mem-btn:hover { border-color: var(--purple); color: var(--purple); }
+  .mem-btn.primary {
+    background: rgba(199,125,255,0.12);
+    border-color: var(--purple);
+    color: var(--purple);
+  }
+  .mem-btn.primary:hover {
+    background: rgba(199,125,255,0.22);
+    box-shadow: 0 4px 14px rgba(199,125,255,0.2);
+  }
+  .mem-btn.danger {
+    border-color: var(--red);
+    color: var(--red);
+    background: rgba(255,59,92,0.07);
+  }
+  .mem-btn.danger:hover { background: rgba(255,59,92,0.15); }
+
+  .mem-spacer { flex: 1; }
+
+  /* ── Stats bar ── */
+  .mem-stats {
+    display: flex;
+    gap: 20px;
+    padding: 10px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 16px;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+  }
+
+  .mem-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .mem-stat-label {
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.15em;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+
+  .mem-stat-value {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--accent);
+    letter-spacing: 0.08em;
+  }
+  .mem-stat-value.purple { color: var(--purple); }
+  .mem-stat-value.green  { color: var(--green);  }
+  .mem-stat-value.yellow { color: var(--yellow); }
+
+  /* ── Hex dump table ── */
+  .mem-scroll-area {
+    flex: 1;
+    overflow: auto;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+  }
+
+  .mem-table-wrap {
+    min-width: max-content;
+  }
+
+  .mem-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+
+  /* Header row */
+  .mem-table thead tr {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+  }
+
+  .mem-table thead th {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 8px 10px;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    text-align: center;
+    font-weight: 400;
+    user-select: none;
+    white-space: nowrap;
+  }
+
+  .mem-table thead th.addr-head {
+    text-align: left;
+    color: var(--accent);
+    padding-left: 16px;
+    border-right: 1px solid var(--border);
+    min-width: 96px;
+  }
+
+  .mem-table thead th.ascii-head {
+    border-left: 1px solid var(--border);
+    color: var(--muted);
+    text-align: left;
+    padding-left: 12px;
+  }
+
+  /* Body rows */
+  .mem-table tbody tr {
+    transition: background 0.12s;
+  }
+
+  .mem-table tbody tr:hover {
+    background: rgba(255,255,255,0.025);
+  }
+
+  /* Row address cell */
+  .mem-cell-addr {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    padding: 5px 12px 5px 16px;
+    border-right: 1px solid var(--border);
+    white-space: nowrap;
+    user-select: none;
+    letter-spacing: 0.05em;
+    vertical-align: middle;
+  }
+
+  /* Byte cell */
+  .mem-cell {
+    padding: 5px 6px;
+    text-align: center;
+    cursor: default;
+    transition: all 0.1s;
+    border-radius: 3px;
+    color: var(--muted);
+    vertical-align: middle;
+    min-width: 30px;
+  }
+
+  .mem-cell.written {
+    color: var(--green);
+    text-shadow: 0 0 8px rgba(57,255,130,0.4);
+  }
+
+  /* Highlight classes for search / PC */
+  .mem-cell.highlight-pc {
+    background: rgba(255,209,102,0.18) !important;
+    color: var(--yellow) !important;
+    text-shadow: 0 0 10px rgba(255,209,102,0.6) !important;
+    border-radius: 3px;
+  }
+
+  .mem-cell.highlight-search {
+    background: rgba(0,229,255,0.18) !important;
+    color: var(--accent) !important;
+    border-radius: 3px;
+  }
+
+  /* ASCII column */
+  .mem-cell-ascii {
+    border-left: 1px solid var(--border);
+    padding: 5px 12px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+    white-space: pre;
+    vertical-align: middle;
+  }
+
+  .ascii-written { color: rgba(57,255,130,0.7); }
+  .ascii-empty   { color: var(--border); }
+
+  /* ── Legend ── */
+  .mem-legend {
+    display: flex;
+    gap: 18px;
+    margin-top: 12px;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+  }
+
+  .mem-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+  }
+
+  .legend-swatch {
+    width: 12px; height: 12px;
+    border-radius: 2px;
+  }
+
+  .legend-swatch.empty   { background: var(--border); }
+  .legend-swatch.written { background: rgba(57,255,130,0.5); }
+  .legend-swatch.pc      { background: rgba(255,209,102,0.5); }
+  .legend-swatch.search  { background: rgba(0,229,255,0.3); }
+
+  /* ── Empty memory state ── */
+  .mem-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 14px;
+    color: var(--muted);
+    text-align: center;
+    padding: 40px;
+    border: 1.5px dashed var(--border);
+    border-radius: 6px;
+  }
+
+  .mem-empty-state .mem-empty-icon {
+    font-size: 40px;
+    opacity: 0.25;
+  }
+
+  .mem-empty-state h3 {
+    font-size: 14px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--purple);
+    opacity: 0.6;
+  }
+
+  .mem-empty-state p {
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.8;
+    max-width: 320px;
+    color: var(--muted);
+  }
+
+  /* Responsive hint tag inside memory cells area */
+  .mem-range-tag {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 9px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    vertical-align: middle;
+  }
+  .mem-range-tag.active-range {
+    border-color: var(--purple);
+    color: var(--purple);
+    background: rgba(199,125,255,0.08);
+  }
+
+  /* ── Loaded segments list (sidebar within mem view) ── */
+  .mem-segments {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+
+  .seg-chip {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 3px 10px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    background: var(--surface2);
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    transition: all 0.18s;
+    user-select: none;
+  }
+  .seg-chip:hover, .seg-chip.active {
+    border-color: var(--purple);
+    color: var(--purple);
+    background: rgba(199,125,255,0.08);
+  }
+
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- Header -->
+  <header>
+    <div class="logo-chip">
+      <div class="logo-dot"></div>
+      <span class="logo-text">SIC/<span>XE</span> Assembler</span>
+    </div>
+    <span class="subtitle">// two-pass • multi-block • literal pools</span>
+    <div class="status-badge" id="statusBadge">IDLE</div>
+  </header>
+
+  <div class="main">
+
+    <!-- Left Panel -->
+    <aside class="left-panel">
+
+      <!-- Upload section -->
+      <div class="panel-section">
+        <div class="panel-label">// Input File</div>
+
+        <div class="dropzone" id="dropzone">
+          <input type="file" id="fileInput" accept=".txt,.asm,.s" />
+          <span class="dz-icon">📄</span>
+          <div class="dz-text">
+            <strong>Click to browse</strong> or drag & drop<br>
+            <span>Accepts .txt / .asm</span>
+          </div>
+          <div class="file-chosen" id="fileChosen"></div>
+        </div>
+
+        <button class="btn-assemble" id="btnAssemble" disabled>
+          <span id="btnLabel">ASSEMBLE</span>
+          <div class="spinner" id="spinner"></div>
+        </button>
+      </div>
+
+      <!-- Tab navigation -->
+      <div class="panel-label" style="padding: 16px 20px 4px; margin-bottom:0;">// Output Files</div>
+      <nav class="tab-nav" id="tabNav">
+        <!-- filled by JS -->
+      </nav>
+
+      <!-- Memory tab (always visible) -->
+      <div class="panel-label" style="padding: 16px 20px 4px; margin-bottom:0;">// Visualization</div>
+      <nav class="tab-nav" style="flex:0; padding-bottom:16px;" id="memNav">
+        <button class="tab-btn mem-tab" id="tab-Memory" onclick="showMemoryView()">
+          <span class="tab-dot"></span>
+          🧠 memory.map
+          <span class="tab-count" id="count-Memory" style="display:none"></span>
+        </button>
+      </nav>
+
+    </aside>
+
+    <!-- Right viewer -->
+    <section class="viewer">
+      <div class="viewer-header">
+        <span class="viewer-title" id="viewerTitle">No File Selected</span>
+        <span class="viewer-lines" id="viewerLines"></span>
+        <button class="btn-mem-action" id="btnClearMem" onclick="clearMemory()">Clear Memory</button>
+        <button class="btn-mem-action" id="btnLoadMem"  onclick="loadObjectCode()">⚡ Load into Memory</button>
+        <button class="btn-copy" id="btnCopy" style="display:none" onclick="copyContent()">Copy</button>
+      </div>
+      <div class="viewer-body" id="viewerBody">
+        <div class="welcome">
+          <div class="welcome-icon">⚙️</div>
+          <h2>Ready to Assemble</h2>
+          <p>Upload your SIC/XE source file (.txt) using the panel on the left, then click <strong>ASSEMBLE</strong> to run the two-pass assembler.</p>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<script>
+// ── Constants ────────────────────────────────────────────────────
+const MEM_SIZE      = 0x100000;  // 1 MB (SIC/XE standard)
+const COLS          = 16;        // hex columns per row
+const PROG_START    = 0x000000;
+
+// ── State ────────────────────────────────────────────────────────
+const TABS = [
+  { key: "Intermediate",  label: "intermediate.txt",  icon: "📋" },
+  { key: "Symbol Table",  label: "symbTable.txt",     icon: "🔖" },
+  { key: "Pool Table",    label: "poolTable.txt",     icon: "💧" },
+  { key: "Block Table",   label: "blockTable.txt",    icon: "📦" },
+  { key: "Pass 2 Output", label: "out_pass2.txt",     icon: "⚙️"  },
+  { key: "HTME Records",  label: "HTME.txt",          icon: "📼" },
+  { key: "Errors",        label: "error.txt",         icon: "🚨" },
+];
+
+let fileData    = null;
+let outputFiles = {};
+let activeTab   = null;
+
+// Memory state
+let memory       = new Uint8Array(MEM_SIZE);   // byte-addressable
+let memWritten   = new Uint8Array(MEM_SIZE);   // 1 = written, 0 = empty
+let memLoaded    = false;
+let loadedSegments = [];  // { start, length, label }
+let pcHighlight  = -1;    // address of current PC (yellow highlight)
+
+// ── Build tab buttons ────────────────────────────────────────────
+const tabNav = document.getElementById("tabNav");
+TABS.forEach(t => {
+  const btn = document.createElement("button");
+  btn.className   = "tab-btn";
+  btn.id          = `tab-${t.key}`;
+  btn.dataset.key = t.key;
+  btn.innerHTML   = `
+    <span class="tab-dot"></span>
+    ${t.icon} ${t.label}
+    <span class="tab-count" id="count-${t.key}">0</span>
+  `;
+  btn.addEventListener("click", () => showTab(t.key));
+  tabNav.appendChild(btn);
+});
+
+// ── File input ───────────────────────────────────────────────────
+const fileInput   = document.getElementById("fileInput");
+const fileChosen  = document.getElementById("fileChosen");
+const btnAssemble = document.getElementById("btnAssemble");
+const dropzone    = document.getElementById("dropzone");
+
+fileInput.addEventListener("change", () => {
+  if (fileInput.files[0]) setFile(fileInput.files[0]);
+});
+
+dropzone.addEventListener("dragover", e => { e.preventDefault(); dropzone.classList.add("drag-over"); });
+dropzone.addEventListener("dragleave",  () => dropzone.classList.remove("drag-over"));
+dropzone.addEventListener("drop", e => {
+  e.preventDefault();
+  dropzone.classList.remove("drag-over");
+  const f = e.dataTransfer.files[0];
+  if (f) setFile(f);
+});
+
+function setFile(f) {
+  fileData = f;
+  fileChosen.textContent = f.name;
+  fileChosen.style.display = "block";
+  btnAssemble.disabled = false;
+  setStatus("idle");
+}
+
+// ── Assemble ─────────────────────────────────────────────────────
+btnAssemble.addEventListener("click", async () => {
+  if (!fileData) return;
+
+  // Auto-clear memory on every new assembly run
+  memory.fill(0);
+  memWritten.fill(0);
+  pcHighlight    = -1;
+  loadedSegments = [];
+  memLoaded      = false;
+  document.getElementById("tab-Memory").classList.remove("mem-loaded");
+  document.getElementById("count-Memory").style.display = "none";
+
+  setStatus("busy");
+  setBusy(true);
+
+  const form = new FormData();
+  form.append("file", fileData);
+
+  try {
+    const res  = await fetch("/assemble", { method: "POST", body: form });
+    const data = await res.json();
+
+    outputFiles = data.files || {};
+    renderTabs(data.ok);
+
+    if (data.ok) {
+      setStatus("ok");
+      showTab("Intermediate");
+      // Mark memory tab as ready-to-load
+      document.getElementById("tab-Memory").classList.add("mem-loaded");
+      document.getElementById("count-Memory").textContent = "READY";
+      document.getElementById("count-Memory").style.display = "inline";
+    } else {
+      setStatus("error");
+      showTab("Errors");
+    }
+  } catch (err) {
+    setStatus("error");
+    showWelcome("❌", "Request Failed", err.message);
+  } finally {
+    setBusy(false);
+  }
+});
+
+// ── Render tabs with data ────────────────────────────────────────
+function renderTabs(ok) {
+  TABS.forEach(t => {
+    const btn   = document.getElementById(`tab-${t.key}`);
+    const count = document.getElementById(`count-${t.key}`);
+    const content = (outputFiles[t.key] || "").trim();
+    const lines   = content ? content.split("\n").length : 0;
+
+    btn.classList.remove("has-data", "has-error", "active");
+
+    if (t.key === "Errors") {
+      if (!ok && content) {
+        btn.classList.add("has-error");
+        count.textContent = lines + "L";
+      }
+    } else if (content) {
+      btn.classList.add("has-data");
+      count.textContent = lines + "L";
+    }
+  });
+}
+
+// ── Show a tab ───────────────────────────────────────────────────
+function showTab(key) {
+  deactivateAllTabs();
+  activeTab = key;
+  document.getElementById(`tab-${key}`).classList.add("active");
+
+  // Hide memory-specific header buttons
+  document.getElementById("btnLoadMem").style.display   = "none";
+  document.getElementById("btnClearMem").style.display  = "none";
+
+  const content = (outputFiles[key] || "").trim();
+  const tab     = TABS.find(t => t.key === key);
+
+  document.getElementById("viewerTitle").textContent = tab ? tab.label : key;
+  document.getElementById("btnCopy").style.display = content ? "inline" : "none";
+
+  if (!content) {
+    showWelcome("📭", "Empty File", "This file has no content — no data was generated.");
+    document.getElementById("viewerLines").textContent = "";
+    return;
+  }
+
+  renderCode(content, key === "Errors");
+}
+
+function deactivateAllTabs() {
+  TABS.forEach(t => document.getElementById(`tab-${t.key}`).classList.remove("active"));
+  document.getElementById("tab-Memory").classList.remove("active");
+}
+
+// ── Render code with line numbers ────────────────────────────────
+function renderCode(text, isError = false) {
+  const lines = text.split("\n");
+  document.getElementById("viewerLines").textContent = `${lines.length} lines`;
+
+  const block = document.createElement("div");
+  block.className = "code-block" + (isError ? " is-error" : "");
+
+  lines.forEach((line, i) => {
+    const row = document.createElement("div");
+    row.className = "line";
+    row.innerHTML =
+      `<span class="ln">${i + 1}</span>` +
+      `<span class="lc">${escHtml(line)}</span>`;
+    block.appendChild(row);
+  });
+
+  const body = document.getElementById("viewerBody");
+  body.innerHTML = "";
+  body.appendChild(block);
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+// ── Welcome / empty state ────────────────────────────────────────
+function showWelcome(icon, title, msg) {
+  document.getElementById("viewerBody").innerHTML = `
+    <div class="welcome">
+      <div class="welcome-icon">${icon}</div>
+      <h2>${title}</h2>
+      <p>${msg}</p>
+    </div>`;
+}
+
+// ── Copy ─────────────────────────────────────────────────────────
+function copyContent() {
+  const text = outputFiles[activeTab] || "";
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.getElementById("btnCopy");
+    btn.textContent = "Copied!";
+    setTimeout(() => btn.textContent = "Copy", 1500);
+  });
+}
+
+// ── Status badge ─────────────────────────────────────────────────
+function setStatus(s) {
+  const el = document.getElementById("statusBadge");
+  el.className = "status-badge";
+  if (s === "ok")    { el.classList.add("ok");    el.textContent = "SUCCESS"; }
+  if (s === "error") { el.classList.add("error"); el.textContent = "ERROR";   }
+  if (s === "busy")  { el.classList.add("busy");  el.textContent = "RUNNING"; }
+  if (s === "idle")  { el.textContent = "IDLE"; }
+}
+
+// ── Busy state ───────────────────────────────────────────────────
+function setBusy(busy) {
+  btnAssemble.disabled = busy;
+  document.getElementById("btnLabel").style.display = busy ? "none" : "inline";
+  document.getElementById("spinner").style.display  = busy ? "block" : "none";
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+//  MEMORY VISUALIZATION
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Parse HTME object code from HTME.txt content.
+ * Supports H, T, M, E records (SIC/XE standard).
+ * Returns { segments: [{start, bytes, label}], programStart, programLength }
+ */
+function parseHTME(htmeText) {
+  const lines    = htmeText.split("\n").map(l => l.trim()).filter(Boolean);
+  const segments = [];
+  let   programStart  = PROG_START;
+  let   programLength = 0;
+  let   headerName    = "PROG";
+
+  for (const line of lines) {
+    if (!line) continue;
+    const rec = line[0].toUpperCase();
+
+    // ── H record: Header ──────────────────────
+    if (rec === "H") {
+      // H^name^XXXXXX^XXXXXX
+      const parts = line.split("^");
+      if (parts.length >= 4) {
+        headerName    = parts[1].trim() || "PROG";
+        programStart  = parseInt(parts[2], 16) || 0;
+        programLength = parseInt(parts[3], 16) || 0;
+      }
+    }
+
+    // ── T record: Text (object code) ──────────
+    else if (rec === "T") {
+      // T^XXXXXX^LL^OBJECTCODE...
+      const parts = line.split("^");
+      if (parts.length < 4) continue;
+
+      const startAddr = parseInt(parts[1], 16);
+      // parts[2] = length byte (we can verify but not required)
+      const objCode   = parts[3].replace(/\s+/g, "");
+
+      if (isNaN(startAddr) || objCode.length < 2) continue;
+
+      const bytes = [];
+      for (let i = 0; i < objCode.length - 1; i += 2) {
+        const byte = parseInt(objCode.slice(i, i + 2), 16);
+        if (!isNaN(byte)) bytes.push(byte);
+      }
+
+      if (bytes.length > 0) {
+        segments.push({ start: startAddr, bytes, label: `${headerName}` });
+      }
+    }
+
+    // ── E record: End / entry point ───────────
+    else if (rec === "E") {
+      const parts = line.split("^");
+      if (parts.length >= 2 && parts[1].trim()) {
+        pcHighlight = parseInt(parts[1], 16);
+      }
+    }
+  }
+
+  return { segments, programStart, programLength, headerName };
+}
+
+/**
+ * Write parsed segments into our memory array.
+ */
+function writeSegmentsToMemory(segments) {
+  for (const seg of segments) {
+    seg.bytes.forEach((b, i) => {
+      const addr = seg.start + i;
+      if (addr >= 0 && addr < MEM_SIZE) {
+        memory[addr]     = b;
+        memWritten[addr] = 1;
+      }
+    });
+  }
+}
+
+/**
+ * Entry: Load the assembled HTME Records into memory and display.
+ */
+function loadObjectCode() {
+  const htmeContent = (outputFiles["HTME Records"] || "").trim();
+  if (!htmeContent) {
+    alert("No HTME Records found. Assemble a program first.");
+    return;
+  }
+
+  // Reset memory
+  memory.fill(0);
+  memWritten.fill(0);
+  pcHighlight    = -1;
+  loadedSegments = [];
+
+  const { segments, programStart, programLength, headerName } = parseHTME(htmeContent);
+
+  if (segments.length === 0) {
+    alert("Could not parse any T-records from HTME output.");
+    return;
+  }
+
+  writeSegmentsToMemory(segments);
+  loadedSegments = segments;
+  memLoaded = true;
+
+  // Update memory tab chip
+  const memTabBtn = document.getElementById("tab-Memory");
+  memTabBtn.classList.add("mem-loaded");
+  document.getElementById("count-Memory").textContent = "LOADED";
+  document.getElementById("count-Memory").style.display = "inline";
+
+  // Render from program start
+  renderMemoryView(programStart, programLength);
+}
+
+/**
+ * Clear memory back to zeros.
+ */
+function clearMemory() {
+  memory.fill(0);
+  memWritten.fill(0);
+  pcHighlight    = -1;
+  loadedSegments = [];
+  memLoaded      = false;
+
+  document.getElementById("count-Memory").textContent = "READY";
+  renderMemoryView(0, 0);
+}
+
+/**
+ * Show the Memory View tab.
+ */
+function showMemoryView() {
+  deactivateAllTabs();
+  activeTab = "__memory__";
+  document.getElementById("tab-Memory").classList.add("active");
+  document.getElementById("viewerTitle").textContent = "memory.map";
+  document.getElementById("viewerLines").textContent = "";
+  document.getElementById("btnCopy").style.display   = "none";
+
+  // Show memory action buttons only if assembly succeeded
+  const hasHTME = !!(outputFiles["HTME Records"] || "").trim();
+  document.getElementById("btnLoadMem").style.display  = hasHTME ? "inline-block" : "none";
+  document.getElementById("btnClearMem").style.display = memLoaded ? "inline-block" : "none";
+
+  if (!memLoaded) {
+    renderMemoryEmpty();
+    return;
+  }
+
+  // Find first written region
+  let firstWritten = 0;
+  for (let i = 0; i < MEM_SIZE; i++) {
+    if (memWritten[i]) { firstWritten = i; break; }
+  }
+  renderMemoryView(firstWritten, 0);
+}
+
+/**
+ * Render the empty (no data loaded) state for the memory view.
+ */
+function renderMemoryEmpty() {
+  const body = document.getElementById("viewerBody");
+  body.innerHTML = `
+    <div class="mem-view">
+      <div class="mem-toolbar">
+        <span class="mem-toolbar-label">// Hex Dump</span>
+        <span class="mem-spacer"></span>
+      </div>
+      <div class="mem-empty-state">
+        <div class="mem-empty-icon">🧠</div>
+        <h3>Memory Not Loaded</h3>
+        <p>
+          Assemble a SIC/XE program, then click
+          <strong style="color:var(--purple)">⚡ Load into Memory</strong>
+          to place the generated object code into the memory map.
+        </p>
+        <div style="margin-top:8px; font-family:var(--mono); font-size:10px; color:var(--muted);">
+          Memory: ${(MEM_SIZE / 1024).toFixed(0)} KB &nbsp;|&nbsp; 
+          Byte-addressable &nbsp;|&nbsp;
+          16 columns (0–F) &nbsp;|&nbsp;
+          Base address: 0x000000
+        </div>
+      </div>
+    </div>`;
+}
+
+/**
+ * Build and render the full hex dump memory visualization.
+ * @param {number} scrollToAddr - address to scroll into view
+ * @param {number} progLen      - program length for stats (0 = auto-detect)
+ */
+function renderMemoryView(scrollToAddr = 0, progLen = 0) {
+  // Detect written range
+  let firstAddr = MEM_SIZE, lastAddr = -1;
+  for (let i = 0; i < MEM_SIZE; i++) {
+    if (memWritten[i]) {
+      if (i < firstAddr) firstAddr = i;
+      if (i > lastAddr)  lastAddr  = i;
+    }
+  }
+  if (lastAddr < 0) { firstAddr = 0; lastAddr = 0; }
+
+  const bytesLoaded = lastAddr >= firstAddr ? (lastAddr - firstAddr + 1) : 0;
+  const actualLen   = progLen || bytesLoaded;
+
+  // We render the range from firstAddr (rounded to row boundary) to lastAddr + some padding
+  const rowStart = Math.floor(firstAddr / COLS) * COLS;
+  const rowEnd   = Math.ceil((lastAddr + 1) / COLS) * COLS;
+
+  // Build segment chips HTML
+  const segsHTML = loadedSegments.length > 0 ? loadedSegments.map((s, idx) =>
+    `<span class="seg-chip active" title="Start: 0x${s.start.toString(16).toUpperCase().padStart(6,'0')} | ${s.bytes.length} bytes">
+      SEG${idx}: 0x${s.start.toString(16).toUpperCase().padStart(6,'0')}
+    </span>`
+  ).join("") : '<span style="font-family:var(--mono);font-size:10px;color:var(--muted);">No segments</span>';
+
+  // Stats
+  const startHex  = firstAddr.toString(16).toUpperCase().padStart(6, "0");
+  const endHex    = lastAddr.toString(16).toUpperCase().padStart(6, "0");
+  const pcHex     = pcHighlight >= 0 ? pcHighlight.toString(16).toUpperCase().padStart(6,"0") : "——";
+
+  // Build table header cols 0-F
+  let headerCols = "";
+  for (let c = 0; c < COLS; c++) {
+    headerCols += `<th>${c.toString(16).toUpperCase()}</th>`;
+  }
+
+  // Build table rows
+  let bodyRows = "";
+  for (let addr = rowStart; addr < rowEnd; addr += COLS) {
+    const rowAddr = addr.toString(16).toUpperCase().padStart(6, "0");
+    let cells = "";
+    let asciiStr = "";
+
+    for (let col = 0; col < COLS; col++) {
+      const a    = addr + col;
+      const val  = memory[a];
+      const writ = memWritten[a];
+      const hex  = val.toString(16).toUpperCase().padStart(2, "0");
+
+      let cls = "mem-cell";
+      if (writ)               cls += " written";
+      if (a === pcHighlight)  cls += " highlight-pc";
+
+      const displayHex = writ ? hex : "··";
+      cells += `<td class="${cls}" data-addr="${a}" title="0x${a.toString(16).toUpperCase().padStart(6,'0')}: ${hex}">${displayHex}</td>`;
+
+      // ASCII
+      if (writ && val >= 0x20 && val < 0x7f) {
+        asciiStr += `<span class="ascii-written">${escHtml(String.fromCharCode(val))}</span>`;
+      } else if (writ) {
+        asciiStr += `<span class="ascii-written">.</span>`;
+      } else {
+        asciiStr += `<span class="ascii-empty">·</span>`;
+      }
+    }
+
+    bodyRows += `
+      <tr id="memrow-${addr}">
+        <td class="mem-cell-addr">0x${rowAddr}</td>
+        ${cells}
+        <td class="mem-cell-ascii">${asciiStr}</td>
+      </tr>`;
+  }
+
+  const body = document.getElementById("viewerBody");
+  body.innerHTML = `
+    <div class="mem-view">
+
+      <!-- Toolbar -->
+      <div class="mem-toolbar">
+        <span class="mem-toolbar-label">// Hex Dump</span>
+        <span class="mem-goto-wrap" style="display:flex;align-items:center;gap:8px;">
+          <input class="mem-goto-input" id="gotoInput" placeholder="0x000000" maxlength="8"
+                 title="Jump to address" onkeydown="if(event.key==='Enter') gotoAddress()" />
+          <button class="mem-btn" onclick="gotoAddress()">Go</button>
+        </span>
+        <button class="mem-btn" onclick="searchByte()">Find Byte</button>
+        <span class="mem-spacer"></span>
+        <span class="mem-range-tag active-range">0x${startHex} – 0x${endHex}</span>
+      </div>
+
+      <!-- Segment chips -->
+      <div class="mem-segments">${segsHTML}</div>
+
+      <!-- Stats bar -->
+      <div class="mem-stats">
+        <div class="mem-stat">
+          <span class="mem-stat-label">Program Start</span>
+          <span class="mem-stat-value">0x${startHex}</span>
+        </div>
+        <div class="mem-stat">
+          <span class="mem-stat-label">Program End</span>
+          <span class="mem-stat-value">0x${endHex}</span>
+        </div>
+        <div class="mem-stat">
+          <span class="mem-stat-label">Length (bytes)</span>
+          <span class="mem-stat-value green">${actualLen} (0x${actualLen.toString(16).toUpperCase()})</span>
+        </div>
+        <div class="mem-stat">
+          <span class="mem-stat-label">Entry Point (PC)</span>
+          <span class="mem-stat-value yellow">${pcHex !== "——" ? "0x" + pcHex : "——"}</span>
+        </div>
+        <div class="mem-stat">
+          <span class="mem-stat-label">Segments</span>
+          <span class="mem-stat-value purple">${loadedSegments.length}</span>
+        </div>
+        <div class="mem-stat">
+          <span class="mem-stat-label">Total Memory</span>
+          <span class="mem-stat-value">${(MEM_SIZE / 1024).toFixed(0)} KB</span>
+        </div>
+      </div>
+
+      <!-- Hex table -->
+      <div class="mem-scroll-area" id="memScrollArea">
+        <div class="mem-table-wrap">
+          <table class="mem-table">
+            <thead>
+              <tr>
+                <th class="addr-head">ADDRESS</th>
+                ${headerCols}
+                <th class="ascii-head">ASCII</th>
+              </tr>
+            </thead>
+            <tbody id="memTableBody">
+              ${bodyRows}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Legend -->
+      <div class="mem-legend">
+        <div class="mem-legend-item">
+          <span class="legend-swatch empty"></span>EMPTY (unwritten)
+        </div>
+        <div class="mem-legend-item">
+          <span class="legend-swatch written"></span>WRITTEN (object code)
+        </div>
+        <div class="mem-legend-item">
+          <span class="legend-swatch pc"></span>ENTRY POINT (PC)
+        </div>
+        <div class="mem-legend-item">
+          <span class="legend-swatch search"></span>SEARCH RESULT
+        </div>
+      </div>
+
+    </div>`;
+
+  // Scroll to entry point or program start
+  const scrollTarget = pcHighlight >= 0 ? pcHighlight : scrollToAddr;
+  const targetRow    = Math.floor(scrollTarget / COLS) * COLS;
+  const rowEl        = document.getElementById(`memrow-${targetRow}`);
+  if (rowEl) {
+    setTimeout(() => rowEl.scrollIntoView({ block: "center", behavior: "smooth" }), 80);
+  }
+
+  // Update Clear button visibility
+  document.getElementById("btnClearMem").style.display = "inline-block";
+}
+
+/**
+ * Jump to an address in the memory view.
+ */
+function gotoAddress() {
+  const raw  = document.getElementById("gotoInput").value.trim();
+  const addr = parseInt(raw.replace(/^0x/i, ""), 16);
+  if (isNaN(addr) || addr < 0 || addr >= MEM_SIZE) {
+    document.getElementById("gotoInput").style.borderColor = "var(--red)";
+    setTimeout(() => document.getElementById("gotoInput").style.borderColor = "", 1000);
+    return;
+  }
+
+  const rowAddr = Math.floor(addr / COLS) * COLS;
+  const rowEl   = document.getElementById(`memrow-${rowAddr}`);
+  if (rowEl) {
+    rowEl.scrollIntoView({ block: "center", behavior: "smooth" });
+    // flash highlight on the specific cell
+    const cellEl = document.querySelector(`.mem-cell[data-addr="${addr}"]`);
+    if (cellEl) {
+      cellEl.classList.add("highlight-search");
+      setTimeout(() => cellEl.classList.remove("highlight-search"), 2000);
+    }
+  } else {
+    document.getElementById("gotoInput").style.borderColor = "var(--red)";
+    setTimeout(() => document.getElementById("gotoInput").style.borderColor = "", 1000);
+  }
+}
+
+/**
+ * Search for a byte value in written memory.
+ */
+function searchByte() {
+  const raw = prompt("Enter byte value to find (hex, e.g. 4B or 0x4B):");
+  if (!raw) return;
+  const target = parseInt(raw.replace(/^0x/i, ""), 16);
+  if (isNaN(target) || target < 0 || target > 255) {
+    alert("Invalid byte value. Enter a hex value between 00 and FF.");
+    return;
+  }
+
+  // Clear previous search highlights
+  document.querySelectorAll(".mem-cell.highlight-search").forEach(el =>
+    el.classList.remove("highlight-search"));
+
+  let found = false;
+  for (let i = 0; i < MEM_SIZE; i++) {
+    if (memWritten[i] && memory[i] === target) {
+      const cellEl = document.querySelector(`.mem-cell[data-addr="${i}"]`);
+      if (cellEl) {
+        cellEl.classList.add("highlight-search");
+        if (!found) {
+          cellEl.scrollIntoView({ block: "center", behavior: "smooth" });
+          found = true;
+        }
+      }
+    }
+  }
+
+  if (!found) alert(`Byte 0x${target.toString(16).toUpperCase().padStart(2,'0')} not found in written memory.`);
+}
+
+</script>
+</body>
+</html>

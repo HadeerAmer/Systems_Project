@@ -1,0 +1,8 @@
+SYMBOL NAME  ADDRESS
+BEGIN        0000
+LOOP         001E
+NUM1         0033
+NUM2         0036
+RESULT       0039
+BASE1        003C
+BUF          003F

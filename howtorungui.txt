@@ -1,0 +1,4 @@
+make sure to install flask by bashing this in the terminal("pip install flask")
+write ("python app.py") in terminal 
+open ("http://localhost:5000")
+after finishing stop the command by bashing in terminal ctrl + 'C'

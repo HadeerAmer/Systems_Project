@@ -1,0 +1,30 @@
+Location counter  Symbol   Instructions  Reference
+----------------  -------  ------------  ----------
+0000               CALC      START          0
+0000               BEGIN     LDA            #0
+0003                         STA            RESULT
+0006                         LDA            NUM1
+0009                         ADD            NUM2
+000C                         SUB            &X'01'
+000F                         COMP           #100
+0012                         JLT            LOOP
+0015                         STA            RESULT
+                             USE            DEFAULTB
+0000                         LDB            #BASE1
+                             BASE           BASE1
+0003               LOOP      LDA            RESULT
+0006                         ADD            &C'AB'
+0009                         +LDX           NUM1
+000D                         STCH           BUF,X
+0010                         TIXR           T
+0012                         JLT            LOOP
+0015                         RSUB           
+                             NOBASE         
+                             USE            CDATA
+0000               NUM1      WORD           10
+0003               NUM2      WORD           25
+0006               RESULT    RESW           1
+0009               BASE1     WORD           512
+                             USE            CBLKS
+0000               BUF       RESB           1024
+0400                         END            BEGIN

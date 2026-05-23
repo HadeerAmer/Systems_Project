@@ -1,0 +1,30 @@
+Location counter  Symbol   Instructions  Reference   Obj. code
+----------------  -------  ------------  ----------  --------------
+0000               CALC      START         0            No object code
+0000               BEGIN     LDA           #0           010000
+0003                         STA           RESULT       0F2033
+0006                         LDA           NUM1         03202A
+0009                         ADD           NUM2         1B202A
+000C                         SUB           &X'01'       1F2009
+000F                         COMP          #100         290064
+0012                         JLT           LOOP         3B2009
+0015                         STA           RESULT       0F2021
+                             USE           DEFAULTB     No object code
+001B                         LDB           #BASE1       69201E
+                             BASE          BASE1        No object code
+001E               LOOP      LDA           RESULT       032018
+0021                         ADD           &C'AB'       1B2FF5
+0024                         +LDX          NUM1         07100033
+0028                         STCH          BUF,X        57A014
+002B                         TIXR          T            B850
+002D                         JLT           LOOP         3B2FEE
+0030                         RSUB                       4C0000
+                             NOBASE                     No object code
+                             USE           CDATA        No object code
+0033               NUM1      WORD          10           00000A
+0036               NUM2      WORD          25           000019
+0039               RESULT    RESW          1            No object code
+003C               BASE1     WORD          512          000200
+                             USE           CBLKS        No object code
+003F               BUF       RESB          1024         No object code
+043F                         END           BEGIN        No object code

@@ -1,0 +1,23 @@
+ERRTEST START   0
+BEGIN   LDA     #0
+        LDB     #BASE1
+        BASE    BASE1
+        LDA     ALPHA
+        ADD     &C'AB'
+        STA     BETA
+        LDA     @DELTA
+        +LDX    ALPHA
+        ADD     &X'FF'
+        STCH    DELTA,X
+        LDA     ALPHA
+        LDA     ALPHA
+        STA     EXTRA
+        RSUB
+        USE     CDATA
+ALPHA   WORD    5
+BETA    RESW    1
+DELTA   RESB    10
+BASE1   WORD    1024
+        USE     CBLKS
+EXTRA   RESW    2
+        END     MAIN
